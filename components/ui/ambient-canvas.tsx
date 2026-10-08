@@ -17,7 +17,7 @@ const MAX_DPR = 1.25;
 const MAX_RENDER_WIDTH = 360;
 const PALETTES: Record<"dark" | "light", ThemePalette> = {
   dark: { base: "#131316", colors: ["#7c3aed", "#0ea5e9", "#f43f5e"] },
-  light: { base: "#f9fafb", colors: ["#6d28d9", "#0284c7", "#e11d48"] },
+  light: { base: "#f9fafb", colors: ["#7c3aed", "#0284c7", "#e11d48"] },
 };
 
 type ChromaFlowProps = {
@@ -79,27 +79,47 @@ export function ChromaFlow({ intensity = 1, radius = 3 }: ChromaFlowProps) {
 
       palette.colors.forEach((color, index) => {
         const phase = index * 2.1;
-        const orbitX = 0.5 + Math.sin(motion * (0.12 + index * 0.025) + phase) * 0.3;
-        const orbitY = 0.5 + Math.cos(motion * (0.16 + index * 0.02) + phase) * 0.32;
-        const waveX = Math.sin(motion * 0.22 + phase) * 0.12;
-        const waveY = Math.cos(motion * 0.19 + phase) * 0.12;
+        const orbitX = 0.5 + Math.sin(motion * (0.18 + index * 0.04) + phase) * 0.36;
+        const orbitY = 0.5 + Math.cos(motion * (0.22 + index * 0.03) + phase) * 0.38;
+        const waveX = Math.sin(motion * 0.34 + phase) * 0.2;
+        const waveY = Math.cos(motion * 0.29 + phase) * 0.2;
         const x = (orbitX + waveX * (1 - cursorX)) * renderWidth;
         const y = (orbitY + waveY * (1 - cursorY)) * renderHeight;
         const influence = pointer.active
           ? Math.max(0, 1 - Math.hypot(orbitX - cursorX, orbitY - cursorY) * 1.5)
           : 0;
-        const blobRadius = renderWidth * (0.42 + influence * 0.2) * (radius / 3);
+        const blobRadius = renderWidth * (0.5 + influence * 0.35) * (radius / 3);
         const gradient = context.createRadialGradient(x, y, 0, x, y, blobRadius);
-        gradient.addColorStop(0, `${color}cc`);
-        gradient.addColorStop(0.28, `${color}88`);
-        gradient.addColorStop(0.72, `${color}18`);
+        gradient.addColorStop(0, `${color}f2`);
+        gradient.addColorStop(0.28, `${color}b8`);
+        gradient.addColorStop(0.72, `${color}38`);
         gradient.addColorStop(1, `${color}00`);
         context.fillStyle = gradient;
         context.beginPath();
-        context.globalAlpha = Math.min(1, 0.9 * intensity);
+        context.globalAlpha = Math.min(1, 1.35 * intensity);
         context.ellipse(x, y, blobRadius, blobRadius * (0.55 + index * 0.08), phase + motion * 0.05, 0, Math.PI * 2);
         context.fill();
       });
+
+      if (pointer.active) {
+        const cursorGradient = context.createRadialGradient(
+          cursorX * renderWidth,
+          cursorY * renderHeight,
+          0,
+          cursorX * renderWidth,
+          cursorY * renderHeight,
+          renderWidth * 0.42 * (radius / 3),
+        );
+        cursorGradient.addColorStop(0, `${palette.colors[1]}d9`);
+        cursorGradient.addColorStop(0.35, `${palette.colors[0]}66`);
+        cursorGradient.addColorStop(1, `${palette.colors[2]}00`);
+        context.globalCompositeOperation = "source-over";
+        context.globalAlpha = 0.95;
+        context.fillStyle = cursorGradient;
+        context.beginPath();
+        context.arc(cursorX * renderWidth, cursorY * renderHeight, renderWidth * 0.42 * (radius / 3), 0, Math.PI * 2);
+        context.fill();
+      }
 
       context.globalCompositeOperation = "overlay";
       context.globalAlpha = 0.2;
