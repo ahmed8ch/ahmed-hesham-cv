@@ -20,7 +20,12 @@ const PALETTES: Record<"dark" | "light", ThemePalette> = {
   light: { base: "#f9fafb", colors: ["#6d28d9", "#0284c7", "#e11d48"] },
 };
 
-export function AmbientCanvas() {
+type ChromaFlowProps = {
+  intensity?: number;
+  radius?: number;
+};
+
+export function ChromaFlow({ intensity = 1, radius = 3 }: ChromaFlowProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -83,15 +88,16 @@ export function AmbientCanvas() {
         const influence = pointer.active
           ? Math.max(0, 1 - Math.hypot(orbitX - cursorX, orbitY - cursorY) * 1.5)
           : 0;
-        const radius = renderWidth * (0.42 + influence * 0.2);
-        const gradient = context.createRadialGradient(x, y, 0, x, y, radius);
+        const blobRadius = renderWidth * (0.42 + influence * 0.2) * (radius / 3);
+        const gradient = context.createRadialGradient(x, y, 0, x, y, blobRadius);
         gradient.addColorStop(0, `${color}cc`);
         gradient.addColorStop(0.28, `${color}88`);
         gradient.addColorStop(0.72, `${color}18`);
         gradient.addColorStop(1, `${color}00`);
         context.fillStyle = gradient;
         context.beginPath();
-        context.ellipse(x, y, radius, radius * (0.55 + index * 0.08), phase + motion * 0.05, 0, Math.PI * 2);
+        context.globalAlpha = Math.min(1, 0.9 * intensity);
+        context.ellipse(x, y, blobRadius, blobRadius * (0.55 + index * 0.08), phase + motion * 0.05, 0, Math.PI * 2);
         context.fill();
       });
 
@@ -148,4 +154,8 @@ export function AmbientCanvas() {
   }, []);
 
   return <canvas ref={canvasRef} aria-hidden="true" className="ambient-canvas" />;
+}
+
+export function AmbientCanvas() {
+  return <ChromaFlow intensity={1} radius={3} />;
 }
