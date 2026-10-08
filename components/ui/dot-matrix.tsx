@@ -23,7 +23,7 @@ export function DotMatrix({ onActivate }: DotMatrixProps) {
     let timer = 0;
     const draw = () => {
       context.clearRect(0, 0, canvas.width, canvas.height);
-      context.fillStyle = "#a1a1aa";
+      context.fillStyle = "#a78bfa";
       const pulse = simulating ? (generation % 2 === 0 ? 0.95 : 0.5) : 0.8;
       for (let y = 0; y < rows; y += 1) {
         for (let x = 0; x < columns; x += 1) {
