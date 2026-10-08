@@ -16,12 +16,12 @@ export default function V2Page() {
   return (
     <main className={`v2-shell ${theme}`}>
       <DotGridBackground
-        cols={24}
-        dotSize={5}
-        dotSpacing={4}
+        cols={28}
+        dotSize={3}
+        dotSpacing={5}
         dotColor={theme === "dark" ? "#a78bfa" : "#6941c6"}
         backgroundColor={theme === "dark" ? "#131316" : "#f9fafb"}
-        scaleFactor={6}
+        scaleFactor={7}
         inertiaDamping={0.92}
         inertia
       >
