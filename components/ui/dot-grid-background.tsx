@@ -1,6 +1,6 @@
 "use client";
 
-import { PointerEvent, ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 
 type DotGridBackgroundProps = {
   children: ReactNode;
@@ -47,13 +47,20 @@ export default function DotGridBackground({
     let width = 0;
     let height = 0;
     let deviceRatio = 1;
+    let protectedLeft = 0;
+    let protectedRight = 0;
     const cell = dotSize * dotSpacing;
     const radius = dotSize / 2;
+    const pointer = { x: 0, y: 0 };
 
     const resize = () => {
       const bounds = viewport.getBoundingClientRect();
       width = bounds.width;
       height = bounds.height;
+      const content = viewport.querySelector<HTMLElement>(".v2-page");
+      const contentBounds = content?.getBoundingClientRect();
+      protectedLeft = contentBounds ? contentBounds.left - bounds.left - 18 : width * 0.18;
+      protectedRight = contentBounds ? contentBounds.right - bounds.left + 18 : width * 0.82;
       deviceRatio = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = Math.round(width * deviceRatio);
       canvas.height = Math.round(height * deviceRatio);
@@ -67,11 +74,15 @@ export default function DotGridBackground({
       context.fillStyle = backgroundColor;
       context.fillRect(0, 0, width, height);
 
-      if (!dragRef.current.active && useInertia) {
-        offsetRef.current.x += velocityRef.current.x;
-        offsetRef.current.y += velocityRef.current.y;
-        velocityRef.current.x *= inertiaDamping;
-        velocityRef.current.y *= inertiaDamping;
+      if (!dragRef.current.active) {
+        const cursorTargetX = (pointer.x - width / 2) * 0.1;
+        const cursorTargetY = (pointer.y - height / 2) * 0.08;
+        offsetRef.current.x += (cursorTargetX - offsetRef.current.x) * 0.08;
+        offsetRef.current.y += (cursorTargetY - offsetRef.current.y) * 0.08;
+        if (useInertia) {
+          velocityRef.current.x *= inertiaDamping;
+          velocityRef.current.y *= inertiaDamping;
+        }
       }
 
       const spacing = cell;
@@ -89,6 +100,7 @@ export default function DotGridBackground({
         for (let column = 0; column < columns; column += 1) {
           const x = xStart + column * spacing + (row % 2 ? spacing / 2 : 0);
           const y = yStart + row * spacing * 0.866;
+          if (x >= protectedLeft && x <= protectedRight) continue;
           const distance = Math.hypot((x - centerX) / width, (y - centerY) / height);
           const scale = Math.max(0.18, 1 - Math.pow(Math.min(distance * 2.2, 1), scaleFactor));
           const dotRadius = Math.max(0.7, radius * scale);
@@ -103,6 +115,9 @@ export default function DotGridBackground({
     };
 
     const onPointerMove = (event: globalThis.PointerEvent) => {
+      const bounds = viewport.getBoundingClientRect();
+      pointer.x = event.clientX - bounds.left;
+      pointer.y = event.clientY - bounds.top;
       if (!dragRef.current.active) return;
       const last = dragRef.current.last;
       const dx = event.clientX - last.x;
@@ -127,6 +142,8 @@ export default function DotGridBackground({
     const observer = new ResizeObserver(resize);
 
     resize();
+    pointer.x = width / 2;
+    pointer.y = height / 2;
     observer.observe(viewport);
     viewport.addEventListener("pointerdown", startDrag);
     window.addEventListener("pointermove", onPointerMove, { passive: true });
