@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArrowUpRight, ExternalLink, Mail, MapPin, Moon, Phone, Printer, Sun } from "lucide-react";
 import { cvData } from "@/data/cv";
-import { ChromaFlow } from "@/components/ui/ambient-canvas";
+import { AmbientCanvas } from "@/components/ui/ambient-canvas";
 import { DotMatrix } from "@/components/ui/dot-matrix";
 import { FluidTabs } from "@/components/ui/fluid-tabs";
 import { GreatUIRow } from "@/components/ui/great-ui-row";
@@ -39,7 +39,7 @@ export default function Home() {
 
   return (
     <main data-theme={theme} className={debug ? "debug-mode" : ""}>
-      <ChromaFlow intensity={1} radius={3} />
+      <AmbientCanvas />
       <div className="page-shell">
         <header className="site-header">
           <a className="wordmark" href="#top" aria-label="Return to top">AH<span>•</span>L / CV</a>
