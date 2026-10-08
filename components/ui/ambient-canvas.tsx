@@ -2,156 +2,181 @@
 
 import { useEffect, useRef } from "react";
 
-type ThemePalette = {
-  base: string;
-  colors: readonly [string, string, string];
-};
-
-type Pointer = {
-  x: number;
-  y: number;
-  active: boolean;
-};
-
-const MAX_DPR = 1.25;
-const MAX_RENDER_WIDTH = 360;
-const PALETTES: Record<"dark" | "light", ThemePalette> = {
-  dark: { base: "#131316", colors: ["#7c3aed", "#0ea5e9", "#f43f5e"] },
-  light: { base: "#f9fafb", colors: ["#7c3aed", "#0284c7", "#e11d48"] },
-};
-
 type ChromaFlowProps = {
   intensity?: number;
   radius?: number;
 };
+
+const vertexShader = `
+  attribute vec2 position;
+  void main() {
+    gl_Position = vec4(position, 0.0, 1.0);
+  }
+`;
+
+const fragmentShader = `
+  precision highp float;
+  uniform vec2 u_resolution;
+  uniform vec2 u_pointer;
+  uniform float u_time;
+  uniform float u_intensity;
+  uniform float u_radius;
+  uniform vec3 u_colors[3];
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+      mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
+      f.y
+    );
+  }
+
+  void main() {
+    vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+    vec2 aspect = vec2(u_resolution.x / u_resolution.y, 1.0);
+    vec2 centered = (uv - 0.5) * aspect;
+    vec2 pointer = (u_pointer - 0.5) * aspect;
+    float time = u_time * 0.08;
+    float radius = max(0.6, u_radius);
+    vec3 color = vec3(0.0);
+
+    for (int i = 0; i < 3; i++) {
+      float fi = float(i);
+      float angle = fi * 2.094 + time * (0.55 + fi * 0.08);
+      vec2 orbit = vec2(cos(angle), sin(angle) * 0.72) * (0.23 + fi * 0.035);
+      vec2 flow = vec2(
+        noise(centered * 2.0 + vec2(time + fi, -time)),
+        noise(centered * 2.0 + vec2(-time, time + fi))
+      ) - 0.5;
+      vec2 source = orbit + flow * 0.22;
+      source += (pointer - source) * 0.3;
+      float distanceToSource = length(centered - source);
+      float ink = smoothstep(0.72 * radius, 0.0, distanceToSource);
+      ink *= 0.62 + noise(centered * 3.0 + time + fi) * 0.38;
+      color += u_colors[i] * ink;
+    }
+
+    float cursorInk = smoothstep(0.7 * radius, 0.0, length(centered - pointer));
+    color += mix(u_colors[1], u_colors[2], 0.45) * cursorInk * 0.3;
+    color *= u_intensity;
+    gl_FragColor = vec4(color, min(0.78, max(color.r, max(color.g, color.b))));
+  }
+`;
+
+const palettes = {
+  dark: [[0.48, 0.23, 0.92], [0.02, 0.58, 0.9], [0.96, 0.2, 0.42]],
+  light: [[0.42, 0.16, 0.78], [0.0, 0.4, 0.72], [0.82, 0.08, 0.22]],
+} as const;
+
+function compileShader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader | null {
+  const shader = gl.createShader(type);
+  if (!shader) return null;
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    console.error("ChromaFlow shader error:", gl.getShaderInfoLog(shader));
+    gl.deleteShader(shader);
+    return null;
+  }
+  return shader;
+}
 
 export function ChromaFlow({ intensity = 1, radius = 3 }: ChromaFlowProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    if (!canvas || !context) return;
+    const gl = canvas?.getContext("webgl", { alpha: true, antialias: false });
+    if (!canvas || !gl) return;
 
+    const vertex = compileShader(gl, gl.VERTEX_SHADER, vertexShader);
+    const fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentShader);
+    if (!vertex || !fragment) return;
+    const program = gl.createProgram();
+    if (!program) return;
+    gl.attachShader(program, vertex);
+    gl.attachShader(program, fragment);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.error("ChromaFlow program error:", gl.getProgramInfoLog(program));
+      return;
+    }
+
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+    const position = gl.getAttribLocation(program, "position");
+    const resolution = gl.getUniformLocation(program, "u_resolution");
+    const pointerLocation = gl.getUniformLocation(program, "u_pointer");
+    const time = gl.getUniformLocation(program, "u_time");
+    const intensityLocation = gl.getUniformLocation(program, "u_intensity");
+    const radiusLocation = gl.getUniformLocation(program, "u_radius");
+    const colors = [0, 1, 2].map((index) => gl.getUniformLocation(program, `u_colors[${index}]`));
+    const pointer = { x: 0.5, y: 0.5 };
     let frame = 0;
     let active = true;
     let visible = true;
     let reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let width = window.innerWidth;
-    let height = window.innerHeight;
-    let renderWidth = 320;
-    let renderHeight = 180;
-    let palette = PALETTES.dark;
-    const pointer: Pointer = { x: width / 2, y: height / 2, active: false };
-
-    const updatePalette = () => {
-      const theme = document.querySelector("main")?.getAttribute("data-theme");
-      palette = theme === "light" ? PALETTES.light : PALETTES.dark;
-    };
 
     const resize = () => {
-      width = window.innerWidth;
-      height = window.innerHeight;
-      renderWidth = Math.min(MAX_RENDER_WIDTH, Math.max(180, Math.round(width / 3)));
-      renderHeight = Math.max(120, Math.round(renderWidth * height / width));
-      const ratio = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-      canvas.width = Math.floor(width * ratio);
-      canvas.height = Math.floor(height * ratio);
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
+      canvas.width = Math.floor(window.innerWidth * ratio);
+      canvas.height = Math.floor(window.innerHeight * ratio);
+      canvas.style.width = `${window.innerWidth}px`;
+      canvas.style.height = `${window.innerHeight}px`;
+      gl.viewport(0, 0, canvas.width, canvas.height);
     };
-
-    const paintFlow = (time: number) => {
-      const seconds = time / 1000;
-      const motion = reducedMotion ? 0 : seconds;
-      const cursorX = pointer.active ? pointer.x / width : 0.5;
-      const cursorY = pointer.active ? pointer.y / height : 0.45;
-      const scaleX = width / renderWidth;
-      const scaleY = height / renderHeight;
-
-      context.save();
-      context.scale(scaleX, scaleY);
-      context.globalCompositeOperation = "source-over";
-      context.fillStyle = palette.base;
-      context.fillRect(0, 0, renderWidth, renderHeight);
-      context.globalCompositeOperation = "screen";
-
-      palette.colors.forEach((color, index) => {
-        const phase = index * 2.1;
-        const orbitX = 0.5 + Math.sin(motion * (0.12 + index * 0.025) + phase) * 0.3;
-        const orbitY = 0.5 + Math.cos(motion * (0.16 + index * 0.02) + phase) * 0.32;
-        const waveX = Math.sin(motion * 0.22 + phase) * 0.12;
-        const waveY = Math.cos(motion * 0.19 + phase) * 0.12;
-        const x = (orbitX + waveX * (1 - cursorX)) * renderWidth;
-        const y = (orbitY + waveY * (1 - cursorY)) * renderHeight;
-        const influence = pointer.active
-          ? Math.max(0, 1 - Math.hypot(orbitX - cursorX, orbitY - cursorY) * 1.5)
-          : 0;
-        const blobRadius = renderWidth * (0.28 + influence * 0.1) * (radius / 3);
-        const gradient = context.createRadialGradient(x, y, 0, x, y, blobRadius);
-        gradient.addColorStop(0, `${color}a8`);
-        gradient.addColorStop(0.28, `${color}62`);
-        gradient.addColorStop(0.72, `${color}12`);
-        gradient.addColorStop(1, `${color}00`);
-        context.fillStyle = gradient;
-        context.beginPath();
-        context.globalAlpha = Math.min(1, 0.52 * intensity);
-        context.ellipse(x, y, blobRadius, blobRadius * (0.55 + index * 0.08), phase + motion * 0.05, 0, Math.PI * 2);
-        context.fill();
-      });
-
-      context.globalCompositeOperation = "overlay";
-      context.globalAlpha = 0.2;
-      for (let line = 0; line < 12; line += 1) {
-        const y = (line / 12) * renderHeight;
-        context.fillStyle = palette.colors[line % palette.colors.length];
-        context.fillRect(0, y + Math.sin(motion * 0.3 + line) * 4, renderWidth, 1);
+    const draw = (now: number) => {
+      if (active && visible) {
+        const theme = document.querySelector("main")?.getAttribute("data-theme") === "light" ? palettes.light : palettes.dark;
+        gl.useProgram(program);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.enableVertexAttribArray(position);
+        gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+        gl.uniform2f(resolution, canvas.width, canvas.height);
+        gl.uniform2f(pointerLocation, pointer.x, pointer.y);
+        gl.uniform1f(time, reducedMotion ? 0 : now / 1000);
+        gl.uniform1f(intensityLocation, intensity);
+        gl.uniform1f(radiusLocation, radius);
+        colors.forEach((location, index) => {
+          if (location) gl.uniform3fv(location, theme[index]);
+        });
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
       }
-      context.restore();
-      context.globalAlpha = 1;
+      frame = requestAnimationFrame(draw);
     };
-
-    const draw = (time: number) => {
-      if (active && visible) paintFlow(time);
-      frame = window.requestAnimationFrame(draw);
-    };
-
     const onPointerMove = (event: PointerEvent) => {
-      pointer.x = event.clientX;
-      pointer.y = event.clientY;
-      pointer.active = true;
+      pointer.x = event.clientX / window.innerWidth;
+      pointer.y = 1 - event.clientY / window.innerHeight;
     };
-    const onPointerLeave = () => { pointer.active = false; };
     const onVisibility = () => { active = document.visibilityState === "visible"; };
-    const onMotionPreference = (event: MediaQueryListEvent) => { reducedMotion = event.matches; };
-    const observer = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
-    const main = document.querySelector("main");
-    const themeObserver = new MutationObserver(updatePalette);
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-
+    const observer = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
     resize();
-    updatePalette();
     observer.observe(canvas);
-    if (main) themeObserver.observe(main, { attributes: true, attributeFilter: ["data-theme"] });
     window.addEventListener("resize", resize);
     window.addEventListener("pointermove", onPointerMove, { passive: true });
-    window.addEventListener("pointerleave", onPointerLeave);
     document.addEventListener("visibilitychange", onVisibility);
-    motionQuery.addEventListener("change", onMotionPreference);
-    frame = window.requestAnimationFrame(draw);
-
+    motionQuery.addEventListener("change", (event) => { reducedMotion = event.matches; });
+    frame = requestAnimationFrame(draw);
     return () => {
-      window.cancelAnimationFrame(frame);
+      cancelAnimationFrame(frame);
       observer.disconnect();
-      themeObserver.disconnect();
       window.removeEventListener("resize", resize);
       window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerleave", onPointerLeave);
       document.removeEventListener("visibilitychange", onVisibility);
-      motionQuery.removeEventListener("change", onMotionPreference);
+      gl.deleteProgram(program);
+      gl.deleteBuffer(buffer);
     };
-  }, []);
+  }, [intensity, radius]);
 
   return <canvas ref={canvasRef} aria-hidden="true" className="ambient-canvas" />;
 }
