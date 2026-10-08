@@ -2,12 +2,9 @@
 
 import { useEffect, useRef } from "react";
 
-type Boid = {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  size: number;
+type ThemePalette = {
+  base: string;
+  colors: readonly [string, string, string];
 };
 
 type Pointer = {
@@ -16,23 +13,12 @@ type Pointer = {
   active: boolean;
 };
 
-const MAX_DPR = 1.5;
-const BOID_COUNT = 46;
-const TAU = Math.PI * 2;
-
-function createBoids(width: number, height: number): Boid[] {
-  return Array.from({ length: BOID_COUNT }, (_, index) => {
-    const angle = (index / BOID_COUNT) * TAU;
-    const speed = 0.25 + (index % 5) * 0.04;
-    return {
-      x: width * (0.18 + ((index * 0.137) % 0.64)),
-      y: height * (0.12 + ((index * 0.191) % 0.72)),
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      size: 1 + (index % 3) * 0.35,
-    };
-  });
-}
+const MAX_DPR = 1.25;
+const MAX_RENDER_WIDTH = 360;
+const PALETTES: Record<"dark" | "light", ThemePalette> = {
+  dark: { base: "#131316", colors: ["#7c3aed", "#0ea5e9", "#f43f5e"] },
+  light: { base: "#f9fafb", colors: ["#6d28d9", "#0284c7", "#e11d48"] },
+};
 
 export function AmbientCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,112 +34,80 @@ export function AmbientCanvas() {
     let reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let width = window.innerWidth;
     let height = window.innerHeight;
-    let boids = createBoids(width, height);
-    let previousTime = performance.now();
-    let palette = { primary: "#a78bfa", secondary: "#56ccf2" };
+    let renderWidth = 320;
+    let renderHeight = 180;
+    let palette = PALETTES.dark;
     const pointer: Pointer = { x: width / 2, y: height / 2, active: false };
 
     const updatePalette = () => {
       const theme = document.querySelector("main")?.getAttribute("data-theme");
-      palette = theme === "light"
-        ? { primary: "#6941c6", secondary: "#147fa3" }
-        : { primary: "#a78bfa", secondary: "#56ccf2" };
+      palette = theme === "light" ? PALETTES.light : PALETTES.dark;
     };
 
     const resize = () => {
       width = window.innerWidth;
       height = window.innerHeight;
+      renderWidth = Math.min(MAX_RENDER_WIDTH, Math.max(180, Math.round(width / 3)));
+      renderHeight = Math.max(120, Math.round(renderWidth * height / width));
       const ratio = Math.min(window.devicePixelRatio || 1, MAX_DPR);
       canvas.width = Math.floor(width * ratio);
       canvas.height = Math.floor(height * ratio);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      boids = createBoids(width, height);
+    };
+
+    const paintFlow = (time: number) => {
+      const seconds = time / 1000;
+      const motion = reducedMotion ? 0 : seconds;
+      const cursorX = pointer.active ? pointer.x / width : 0.5;
+      const cursorY = pointer.active ? pointer.y / height : 0.45;
+      const scaleX = width / renderWidth;
+      const scaleY = height / renderHeight;
+
+      context.save();
+      context.scale(scaleX, scaleY);
+      context.globalCompositeOperation = "source-over";
+      context.fillStyle = palette.base;
+      context.fillRect(0, 0, renderWidth, renderHeight);
+      context.globalCompositeOperation = "screen";
+
+      palette.colors.forEach((color, index) => {
+        const phase = index * 2.1;
+        const orbitX = 0.5 + Math.sin(motion * (0.12 + index * 0.025) + phase) * 0.3;
+        const orbitY = 0.5 + Math.cos(motion * (0.16 + index * 0.02) + phase) * 0.32;
+        const waveX = Math.sin(motion * 0.22 + phase) * 0.12;
+        const waveY = Math.cos(motion * 0.19 + phase) * 0.12;
+        const x = (orbitX + waveX * (1 - cursorX)) * renderWidth;
+        const y = (orbitY + waveY * (1 - cursorY)) * renderHeight;
+        const influence = pointer.active
+          ? Math.max(0, 1 - Math.hypot(orbitX - cursorX, orbitY - cursorY) * 1.5)
+          : 0;
+        const radius = renderWidth * (0.42 + influence * 0.2);
+        const gradient = context.createRadialGradient(x, y, 0, x, y, radius);
+        gradient.addColorStop(0, `${color}cc`);
+        gradient.addColorStop(0.28, `${color}88`);
+        gradient.addColorStop(0.72, `${color}18`);
+        gradient.addColorStop(1, `${color}00`);
+        context.fillStyle = gradient;
+        context.beginPath();
+        context.ellipse(x, y, radius, radius * (0.55 + index * 0.08), phase + motion * 0.05, 0, Math.PI * 2);
+        context.fill();
+      });
+
+      context.globalCompositeOperation = "overlay";
+      context.globalAlpha = 0.2;
+      for (let line = 0; line < 12; line += 1) {
+        const y = (line / 12) * renderHeight;
+        context.fillStyle = palette.colors[line % palette.colors.length];
+        context.fillRect(0, y + Math.sin(motion * 0.3 + line) * 4, renderWidth, 1);
+      }
+      context.restore();
+      context.globalAlpha = 1;
     };
 
     const draw = (time: number) => {
-      const elapsed = Math.min(time - previousTime, 32);
-      previousTime = time;
-
-      if (active && visible) {
-        context.clearRect(0, 0, width, height);
-        const step = reducedMotion ? 0 : elapsed;
-        const neighborRadius = Math.min(150, width * 0.16);
-
-        boids.forEach((boid, index) => {
-          let alignmentX = 0;
-          let alignmentY = 0;
-          let cohesionX = 0;
-          let cohesionY = 0;
-          let separationX = 0;
-          let separationY = 0;
-          let neighbors = 0;
-
-          boids.forEach((neighbor, neighborIndex) => {
-            if (index === neighborIndex) return;
-            const dx = neighbor.x - boid.x;
-            const dy = neighbor.y - boid.y;
-            const distance = Math.hypot(dx, dy);
-            if (distance > neighborRadius || distance === 0) return;
-            alignmentX += neighbor.vx;
-            alignmentY += neighbor.vy;
-            cohesionX += neighbor.x;
-            cohesionY += neighbor.y;
-            if (distance < 34) {
-              separationX -= dx / distance;
-              separationY -= dy / distance;
-            }
-            neighbors += 1;
-          });
-
-          if (neighbors > 0) {
-            alignmentX = alignmentX / neighbors - boid.vx;
-            alignmentY = alignmentY / neighbors - boid.vy;
-            cohesionX = (cohesionX / neighbors - boid.x) * 0.0007;
-            cohesionY = (cohesionY / neighbors - boid.y) * 0.0007;
-          }
-
-          let cursorX = 0;
-          let cursorY = 0;
-          if (pointer.active) {
-            const dx = pointer.x - boid.x;
-            const dy = pointer.y - boid.y;
-            const distance = Math.hypot(dx, dy);
-            if (distance < 260 && distance > 0) {
-              const force = (1 - distance / 260) * 0.045;
-              cursorX = (dx / distance) * force;
-              cursorY = (dy / distance) * force;
-            }
-          }
-
-          boid.vx += (alignmentX * 0.008 + cohesionX + separationX * 0.012 + cursorX) * step;
-          boid.vy += (alignmentY * 0.008 + cohesionY + separationY * 0.012 + cursorY) * step;
-          const speed = Math.hypot(boid.vx, boid.vy);
-          const maxSpeed = 0.48;
-          if (speed > maxSpeed) {
-            boid.vx = (boid.vx / speed) * maxSpeed;
-            boid.vy = (boid.vy / speed) * maxSpeed;
-          }
-          boid.x = (boid.x + boid.vx * step + width) % width;
-          boid.y = (boid.y + boid.vy * step + height) % height;
-
-          const angle = Math.atan2(boid.vy, boid.vx);
-          const trail = 7 + speed * 20;
-          context.beginPath();
-          context.moveTo(boid.x - Math.cos(angle) * trail, boid.y - Math.sin(angle) * trail);
-          context.lineTo(boid.x, boid.y);
-          context.strokeStyle = index % 5 === 0 ? palette.secondary : palette.primary;
-          context.globalAlpha = pointer.active ? 0.18 : 0.11;
-          context.lineWidth = boid.size;
-          context.stroke();
-          context.fillStyle = context.strokeStyle;
-          context.globalAlpha = pointer.active ? 0.34 : 0.2;
-          context.fillRect(boid.x, boid.y, boid.size, boid.size);
-        });
-        context.globalAlpha = 1;
-      }
-
+      if (active && visible) paintFlow(time);
       frame = window.requestAnimationFrame(draw);
     };
 
@@ -168,6 +122,7 @@ export function AmbientCanvas() {
     const observer = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
     const main = document.querySelector("main");
     const themeObserver = new MutationObserver(updatePalette);
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
     resize();
     updatePalette();
@@ -177,7 +132,7 @@ export function AmbientCanvas() {
     window.addEventListener("pointermove", onPointerMove, { passive: true });
     window.addEventListener("pointerleave", onPointerLeave);
     document.addEventListener("visibilitychange", onVisibility);
-    window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", onMotionPreference);
+    motionQuery.addEventListener("change", onMotionPreference);
     frame = window.requestAnimationFrame(draw);
 
     return () => {
@@ -188,7 +143,7 @@ export function AmbientCanvas() {
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerleave", onPointerLeave);
       document.removeEventListener("visibilitychange", onVisibility);
-      window.matchMedia("(prefers-reduced-motion: reduce)").removeEventListener("change", onMotionPreference);
+      motionQuery.removeEventListener("change", onMotionPreference);
     };
   }, []);
 
