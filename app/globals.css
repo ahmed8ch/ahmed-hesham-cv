@@ -70,8 +70,8 @@ button, a { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 a { color: inherit; text-decoration: none; }
 button { cursor: pointer; }
-.ambient-canvas { position: fixed; inset: 0; z-index: 1; width: 100%; height: 100%; pointer-events: none; opacity: .95; mix-blend-mode: normal; }
-[data-theme="light"] .ambient-canvas { opacity: .86; }
+.ambient-canvas { position: fixed; inset: 0; z-index: 1; width: 100%; height: 100%; pointer-events: none; opacity: .42; mix-blend-mode: screen; }
+[data-theme="light"] .ambient-canvas { mix-blend-mode: multiply; opacity: .28; }
 @media (prefers-reduced-motion: reduce) {
   .ambient-canvas { opacity: .2; }
 }
