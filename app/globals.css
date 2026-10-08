@@ -43,6 +43,29 @@
 html { scroll-behavior: smooth; }
 body { margin: 0; background: var(--canvas); color: var(--foreground); font-family: "Inter Variable", Inter, sans-serif; font-size: 13px; line-height: 20px; font-optical-sizing: auto; transition: background var(--moderate), color var(--moderate); }
 main { min-height: 100vh; background: var(--canvas); color: var(--foreground); transition: background var(--moderate), color var(--moderate); }
+[data-theme="light"] h1,
+[data-theme="light"] h2,
+[data-theme="light"] h3,
+[data-theme="light"] .wordmark,
+[data-theme="light"] .contact-list dd,
+[data-theme="light"] .revision-header p,
+[data-theme="light"] .credential p,
+[data-theme="light"] .simple-row p,
+[data-theme="light"] .impact-list,
+[data-theme="light"] .meta-line,
+[data-theme="light"] .signal-line,
+[data-theme="light"] .caption {
+  color: #111827;
+}
+[data-theme="light"] .hero-summary,
+[data-theme="light"] .text-link,
+[data-theme="light"] .pill,
+[data-theme="light"] .skill-group h3 {
+  color: #374151;
+}
+[data-theme="light"] .text-link {
+  color: #5b21b6;
+}
 button, a { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 a { color: inherit; text-decoration: none; }
